@@ -83,6 +83,35 @@ async function removeSessionFolder(id, client = null) {
   }
 }
 
+function cleanupDeadSessions() {
+  console.log("Menjalankan pengecekan session...");
+
+  const savedSessions = getSessionsFile();
+
+  savedSessions.forEach(sess => {
+    const activeClient = sessions.find(s => s.id === sess.id)?.client;
+
+    // Jika client tidak ada atau tidak ready → hapus session
+    if (!activeClient || activeClient.ws === null || activeClient.pupBrowser === null) {
+      console.log(`Session ${sess.id} tidak aktif. Menghapus...`);
+
+      // Hapus node dari sessions.json
+      const updated = savedSessions.filter(s => s.id !== sess.id);
+      setSessionsFile(updated);
+
+      // Hapus folder session
+      removeSessionFolder(sess.id);
+
+      // Emit ke frontend jika perlu
+      io.emit("remove-session", sess.id);
+    }
+  });
+}
+
+// Jalankan tiap 30 detik
+setInterval(cleanupDeadSessions, 30 * 1000);
+
+
 /**
  * BASED ON MANY QUESTIONS
  * Actually ready mentioned on the tutorials
