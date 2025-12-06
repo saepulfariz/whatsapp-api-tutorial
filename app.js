@@ -11,6 +11,7 @@ const axios = require('axios');
 const mime = require('mime-types');
 
 const port = process.env.PORT || 8000;
+const deviceName = process.env.DEVICE_NAME || 'Penguin';
 
 const app = express();
 const server = http.createServer(app);
@@ -39,6 +40,8 @@ app.get('/', (req, res) => {
 });
 
 const client = new Client({
+  deviceName: deviceName,
+  // browserName: 'Browser Custom',
   restartOnAuthFail: true,
   puppeteer: {
     headless: true,

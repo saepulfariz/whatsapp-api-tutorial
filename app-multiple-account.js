@@ -8,6 +8,7 @@ const { phoneNumberFormatter } = require('./helpers/formatter');
 const fileUpload = require('express-fileupload');
 const axios = require('axios');
 const port = process.env.PORT || 8000;
+const deviceName = process.env.DEVICE_NAME || 'Penguin';
 
 const app = express();
 const server = http.createServer(app);
@@ -67,6 +68,8 @@ const getSessionsFile = function() {
 const createSession = function(id, description) {
   console.log('Creating session: ' + id);
   const client = new Client({
+	deviceName: deviceName,
+	// browserName: 'Browser Custom',
     restartOnAuthFail: true,
     puppeteer: {
       headless: true,
