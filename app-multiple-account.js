@@ -10,6 +10,13 @@ const axios = require('axios');
 const port = process.env.PORT || 8000;
 const deviceName = process.env.DEVICE_NAME || 'Penguin';
 
+const os = require("os");
+const isWindows = os.platform() === "win32";
+
+const { exec } = require("child_process");
+const path = require('path');
+
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server);
@@ -18,6 +25,63 @@ app.use(express.json());
 app.use(express.urlencoded({
   extended: true
 }));
+
+function killChromeProcess(sessionPath) {
+  return new Promise(resolve => {
+    const escapedPath = sessionPath.replace(/\\/g, "\\\\");
+
+    let cmd;
+
+    if (isWindows) {
+      cmd = `wmic process where "CommandLine like '%${escapedPath}%' and name='chrome.exe'" delete`;
+    } else {
+      // Linux: cari jalur chrome/chromium dengan argumen folder session
+      cmd = `pkill -f "${sessionPath}"`;
+    }
+
+    exec(cmd, (err) => {
+      if (err) {
+        console.log("Tidak ada chrome/chromium terkait untuk dibunuh:", err.message);
+      } else {
+        console.log("Chrome/Chromium process untuk session dihentikan.");
+      }
+      resolve();
+    });
+  });
+}
+
+
+async function removeSessionFolder(id, client = null) {
+  const sessionPath = path.join(__dirname, ".wwebjs_auth", `session-${id}`);
+
+  try {
+    console.log("Menutup client:", id);
+
+    // Tutup client WhatsApp
+    if (client) {
+      try { await client.destroy(); } catch {}
+      try { await client.pupBrowser?.close(); } catch {}
+    }
+
+    // Bunuh process chromium/chrome yang masih lock
+    console.log("Membunuh chrome/chromium process untuk session:", id);
+    await killChromeProcess(sessionPath);
+
+    // Delay sedikit agar OS melepas file lock
+    await new Promise(res => setTimeout(res, 600));
+
+    // Hapus folder
+    if (fs.existsSync(sessionPath)) {
+      fs.rmSync(sessionPath, { recursive: true, force: true });
+      console.log(`Folder session-${id} berhasil dihapus.`);
+    } else {
+      console.log(`Folder session-${id} tidak ditemukan.`);
+    }
+
+  } catch (err) {
+    console.error(`Gagal menghapus folder session-${id}:`, err);
+  }
+}
 
 /**
  * BASED ON MANY QUESTIONS
@@ -118,18 +182,21 @@ const createSession = function(id, description) {
     io.emit('message', { id: id, text: 'Auth failure, restarting...' });
   });
 
-  client.on('disconnected', (reason) => {
-    io.emit('message', { id: id, text: 'Whatsapp is disconnected!' });
-    client.destroy();
-    client.initialize();
+  client.on("disconnected", async (reason) => {
+    console.log(`Session ${id} disconnected:`, reason);
 
-    // Menghapus pada file sessions
-    const savedSessions = getSessionsFile();
-    const sessionIndex = savedSessions.findIndex(sess => sess.id == id);
-    savedSessions.splice(sessionIndex, 1);
-    setSessionsFile(savedSessions);
+	// Hapus dari sessions.json
+	const saved = getSessionsFile().filter(sess => sess.id !== id);
+	setSessionsFile(saved);
 
-    io.emit('remove-session', id);
+	// Hapus dari memory
+	const memIndex = sessions.findIndex(s => s.id === id);
+	if (memIndex >= 0) sessions.splice(memIndex, 1);
+
+	// Hapus folder
+	await removeSessionFolder(id, client);
+
+	io.emit("remove-session", id);
   });
 
   // Tambahkan client ke sessions
